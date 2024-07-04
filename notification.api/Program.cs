@@ -1,21 +1,33 @@
-using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.ApplicationInsights.Extensibility;
+using Microsoft.ApplicationInsights;
 using notification.api;
 using notification.bll;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
 
-builder.Services.AddSingleton<NotificationReceiver>(sp =>
+
+builder.Services.AddApplicationInsightsTelemetry(options =>
 {
-    var configuration = sp.GetRequiredService<IConfiguration>();
-    return new NotificationReceiver("localhost", "guest", "guest");
+    options.ConnectionString = builder.Configuration.GetConnectionString("AZURE_APPLICATIONINSIGHTS_CONNECTIONSTRING");
+});
+
+// Register TelemetryClient as a singleton
+builder.Services.AddSingleton<ITelemetryInitializer, OperationCorrelationTelemetryInitializer>();
+builder.Services.AddSingleton<TelemetryClient>();
+
+// Add services to the container.
+builder.Services.AddSingleton<NotificationReceiver>((sp) =>
+{
+    var telemetryClient = sp.GetRequiredService<TelemetryClient>();
+    return new NotificationReceiver("localhost", "guest", "guest", telemetryClient);
 });
 
 builder.Services.AddSingleton<INotificationService, NotificationService>();
 builder.Services.AddHostedService<MyBackgroundService>();
 
 builder.Services.AddControllers();
+
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

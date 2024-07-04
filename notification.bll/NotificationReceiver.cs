@@ -1,8 +1,8 @@
-﻿using notification.api;
-using RabbitMQ.Client.Events;
+﻿using RabbitMQ.Client.Events;
 using RabbitMQ.Client;
 using System.Text;
-using System.Data.Common;
+using Microsoft.ApplicationInsights.DataContracts;
+using Microsoft.ApplicationInsights;
 
 namespace notification.bll
 {
@@ -10,8 +10,9 @@ namespace notification.bll
     {
         private readonly IConnection _connection;
         private readonly IModel _channel;
+        private readonly TelemetryClient _telemetryClient;
 
-        public NotificationReceiver(string hostName, string userName, string password)
+        public NotificationReceiver(string hostName, string userName, string password, TelemetryClient telemetryClient)
         {
             var factory = new ConnectionFactory()
             {
@@ -22,6 +23,7 @@ namespace notification.bll
 
             _connection = factory.CreateConnection();
             _channel = _connection.CreateModel();
+            _telemetryClient = telemetryClient;
         }
 
         public void Dispose()
@@ -43,7 +45,35 @@ namespace notification.bll
             {
                 var body = ea.Body.ToArray();
                 var message = Encoding.UTF8.GetString(body);
-                messageHandler(message);
+
+                var dependencyTelemetry = new DependencyTelemetry
+                {
+                    Type = "RabbitMQ",
+                    Target = queueName,
+                    Data = message,
+                    Name = "Receive Message"
+                };
+                var operation = _telemetryClient.StartOperation(dependencyTelemetry);
+
+                try
+                {
+
+                    _telemetryClient.TrackDependency(dependencyTelemetry);
+
+                    messageHandler(message);
+
+                    operation.Telemetry.Success = true;
+                }
+                catch (Exception ex)
+                {
+                    operation.Telemetry.Success = false;
+                    _telemetryClient.TrackException(ex); 
+                    _telemetryClient.TrackDependency(dependencyTelemetry);
+                }
+                finally
+                {
+                    _telemetryClient.StopOperation(operation);
+                }
             };
 
             _channel.BasicConsume(queue: queueName,
