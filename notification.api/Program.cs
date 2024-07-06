@@ -5,7 +5,11 @@ using notification.bll;
 
 var builder = WebApplication.CreateBuilder(args);
 
-
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    serverOptions.ListenAnyIP(80); // Default HTTP port
+    serverOptions.ListenAnyIP(443); // Another port if needed
+});
 
 builder.Services.AddApplicationInsightsTelemetry(options =>
 {
@@ -20,7 +24,11 @@ builder.Services.AddSingleton<TelemetryClient>();
 builder.Services.AddSingleton<NotificationReceiver>((sp) =>
 {
     var telemetryClient = sp.GetRequiredService<TelemetryClient>();
-    return new NotificationReceiver("localhost", "guest", "guest", telemetryClient);
+
+
+    var rabbitMqHost = Environment.GetEnvironmentVariable("RABBITMQ_HOST") ?? "localhost";
+    Console.WriteLine(rabbitMqHost);
+    return new NotificationReceiver(rabbitMqHost, "guest", "guest", telemetryClient);
 });
 
 builder.Services.AddSingleton<INotificationService, NotificationService>();
